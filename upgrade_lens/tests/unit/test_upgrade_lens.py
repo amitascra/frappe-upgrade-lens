@@ -198,6 +198,35 @@ class TestGitAudit(unittest.TestCase):
 		self.assertEqual(report["modified_files"][0]["line_ranges"], [{"line_from": 199, "line_to": 199}])
 
 
+class TestScriptScanConfig(unittest.TestCase):
+	def _meta_with_fields(self, fieldnames: set[str]):
+		meta = MagicMock()
+		meta.has_field.side_effect = lambda name: name in fieldnames
+		return meta
+
+	@patch("upgrade_lens.api.conflicts.frappe")
+	def test_client_script_uses_dt_and_enabled(self, mock_frappe):
+		from upgrade_lens.api.conflicts import _script_scan_config
+
+		mock_frappe.get_meta.return_value = self._meta_with_fields({"dt", "enabled", "script"})
+		config = _script_scan_config("Client Script")
+		self.assertEqual(config["reference_field"], "dt")
+		self.assertEqual(config["filters"], {"enabled": 1})
+		self.assertIn("dt", config["fields"])
+
+	@patch("upgrade_lens.api.conflicts.frappe")
+	def test_server_script_uses_reference_doctype_and_disabled(self, mock_frappe):
+		from upgrade_lens.api.conflicts import _script_scan_config
+
+		mock_frappe.get_meta.return_value = self._meta_with_fields(
+			{"reference_doctype", "disabled", "script"}
+		)
+		config = _script_scan_config("Server Script")
+		self.assertEqual(config["reference_field"], "reference_doctype")
+		self.assertEqual(config["filters"], {"disabled": 0})
+		self.assertIn("reference_doctype", config["fields"])
+
+
 class TestDiffLineRanges(unittest.TestCase):
 	def test_single_line_change(self):
 		from upgrade_lens.utils.git_audit import _parse_unified_diff_line_ranges

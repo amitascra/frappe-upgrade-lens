@@ -26,6 +26,23 @@ def scan_conflicts(target_version: str) -> dict:
 	}
 
 
+def _script_scan_config(doctype: str) -> dict:
+	"""Resolve field names — Client Script uses dt/enabled; Server Script uses reference_doctype/disabled."""
+	meta = frappe.get_meta(doctype)
+	reference_field = "dt" if meta.has_field("dt") else "reference_doctype"
+	fields = ["name", "script", reference_field]
+	filters: dict = {}
+
+	if meta.has_field("enabled"):
+		fields.append("enabled")
+		filters["enabled"] = 1
+	elif meta.has_field("disabled"):
+		fields.append("disabled")
+		filters["disabled"] = 0
+
+	return {"fields": fields, "filters": filters, "reference_field": reference_field}
+
+
 def _scan_scripts(doctype: str, rule_set: dict) -> list[dict]:
 	patterns = rule_set.get("deprecated_patterns") or []
 	if not patterns:
@@ -40,22 +57,24 @@ def _scan_scripts(doctype: str, rule_set: dict) -> list[dict]:
 		if pattern.get("regex")
 	]
 
+	config = _script_scan_config(doctype)
 	hits: list[dict] = []
 	scripts = frappe.get_all(
 		doctype,
-		fields=["name", "dt", "script", "enabled"],
-		filters={"enabled": 1},
+		fields=config["fields"],
+		filters=config["filters"],
 	)
 
 	for script in scripts:
 		content = script.script or ""
+		reference_doctype = script.get(config["reference_field"]) or ""
 		for pattern in compiled:
 			if pattern["compiled"].search(content):
 				hits.append(
 					{
 						"doctype": doctype,
 						"name": script.name,
-						"reference_doctype": script.dt,
+						"reference_doctype": reference_doctype,
 						"pattern_id": pattern.get("id"),
 						"severity": pattern.get("severity", "medium"),
 						"message": pattern.get("message"),
